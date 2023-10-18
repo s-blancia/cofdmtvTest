@@ -162,6 +162,10 @@ public class MainActivity extends AppCompatActivity {
 
 	private native void destroyDecoder();
 
+	public int process(){
+
+		return 0;
+	}
 	private final AudioRecord.OnRecordPositionUpdateListener recordListener = new AudioRecord.OnRecordPositionUpdateListener() {
 		@Override
 		public void onMarkerReached(AudioRecord ignore) {
@@ -173,7 +177,7 @@ public class MainActivity extends AppCompatActivity {
 			audioRecord.read(recordBuffer, 0, recordBuffer.length);
 			if (!feedDecoder(recordBuffer, recordCount, recordChannel))
 				return;
-			int status = processDecoder();
+			int status = process();
 			if (showSpectrum) {
 				spectrumDecoder(spectrumPixels, spectrogramPixels, spectrumTint);
 				spectrumBitmap.setPixels(spectrumPixels, 0, spectrumWidth, 0, 0, spectrumWidth, spectrumHeight);
