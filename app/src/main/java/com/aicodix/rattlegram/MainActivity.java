@@ -14,36 +14,57 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.AudioTrack;
+import android.media.ExifInterface;
 import android.media.MediaRecorder;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.provider.MediaStore;
+import android.system.ErrnoException;
+import android.system.OsConstants;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.NumberPicker;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.aicodix.rattlegram.databinding.ActivityMainBinding;
 
+
+import com.aicodix.rattlegram.ModeInterfaces.IModeInfo;
+import com.aicodix.rattlegram.Output.WaveFileOutputContext;
+
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -51,7 +72,11 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
+
 public class MainActivity extends AppCompatActivity {
+
+
+	private static final int CAMERA_PERMISSION_REQUEST = 7;
 
 	// Used to load the 'rattlegram' library on application startup.
 	static {
@@ -95,6 +120,36 @@ public class MainActivity extends AppCompatActivity {
 	private byte[] stagedCall;
 	private String callSign;
 	private String draftText;
+
+
+
+
+
+	public String pingLocation = " ";
+	private static final String TAG = "LocationHelper";
+	private LocationManager mLocationManager =null;
+	private LocationListener mLocationListener;
+	private static final int REQUEST_LOAD_IMAGE_PERMISSION = 1;
+	private static final int REQUEST_SAVE_WAVE_PERMISSION = 2;
+	private static final int REQUEST_IMAGE_CAPTURE_PERMISSION = 3;
+	private static final int REQUEST_PICK_IMAGE = 11;
+	private static final int REQUEST_IMAGE_CAPTURE = 12;
+	private static final int REQUEST_LOCATION_PERMISSION = 4;
+	private Settings mSettings;
+	private CropView cpvDisplayPicture;
+	private Encoder mEncoder;
+	private EditText edtEnterText;
+	private Button btnDeletePicture;
+//	private MyDatabaseHelper dbHelper;
+
+	private LocationManager locationManager;
+	private LocationListener locationListener;
+
+	public String geolocationLink;
+
+
+	private LocationHelper locationHelper;
+	public String LocalGeolocationLink;
 
 	private native boolean createEncoder(int sampleRate);
 
@@ -192,6 +247,7 @@ public class MainActivity extends AppCompatActivity {
 			final int STATUS_HEAP = 4;
 			final int STATUS_NOPE = 5;
 			final int STATUS_PING = 6;
+
 			switch (status) {
 				case STATUS_OKAY:
 					break;
@@ -365,11 +421,31 @@ public class MainActivity extends AppCompatActivity {
 	@Override
 	public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
 		super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-		if (requestCode != permissionID)
-			return;
-		for (int i = 0; i < permissions.length; ++i)
-			if (permissions[i].equals(Manifest.permission.RECORD_AUDIO) && grantResults[i] == PackageManager.PERMISSION_GRANTED)
-				initAudioRecord(false);
+
+		if (requestCode == permissionID) {
+			for (int i = 0; i < permissions.length; ++i) {
+				if (permissions[i].equals(Manifest.permission.RECORD_AUDIO) && grantResults[i] == PackageManager.PERMISSION_GRANTED) {
+					initAudioRecord(false);
+				}
+				if (permissions[i].equals(Manifest.permission.READ_EXTERNAL_STORAGE) && grantResults[i] == PackageManager.PERMISSION_GRANTED) {
+					showMessage("Load Image Permission Accepted");
+					loadImage(mSettings.getImageUri());
+				}
+				if (permissions[i].equals(Manifest.permission.CAMERA) && grantResults[i] == PackageManager.PERMISSION_GRANTED) {
+					// Handle CAMERA (Image Capture) permission granted
+				//	dispatchTakePictureIntent();
+				}
+				// Add more conditions for other permissions as needed
+			}
+		} else {
+			setDefaultBitmap();
+		}
+	}
+
+
+
+	private boolean permissionGranted(@NonNull int[] grantResults) {
+		return grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
 	}
 
 	@Override
@@ -410,9 +486,14 @@ public class MainActivity extends AppCompatActivity {
 			edit.putString("m" + i, messages.getItem(i));
 		edit.apply();
 	}
+	private TextView statusTextView; // Add a TextView field
+
+
+
+
 
 	@Override
-	protected void onCreate(Bundle state) {
+	protected void  onCreate(Bundle state) {
 		messages = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1);
 		final int defaultSampleRate = 8000;
 		final int defaultChannelSelect = 0;
@@ -423,6 +504,28 @@ public class MainActivity extends AppCompatActivity {
 		final String defaultDraftText = "";
 		final boolean defaultFancyHeader = false;
 		final boolean defaultRepeaterMode = false;
+
+		// Initialize LocationManager
+		mLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+
+		//CropView cpvDisplayPicture = findViewById(R.id.cpvDisplayPicture);
+		cpvDisplayPicture = findViewById(R.id.cpvDisplayPicture);
+
+		locationHelper = new LocationHelper(this, statusTextView);
+		//cpvDisplayPicture.setVisibility(View.);
+
+
+
+		MainActivityMessenger messenger = new MainActivityMessenger(this);
+		mEncoder = new Encoder(messenger);
+		mSettings = new Settings(this);
+		mSettings.load();
+//		loadImage(getIntent());
+		setMode(mSettings.getModeClassName());
+
+
+
+
 		if (state == null) {
 			SharedPreferences pref = getPreferences(Context.MODE_PRIVATE);
 			AppCompatDelegate.setDefaultNightMode(pref.getInt("nightMode", AppCompatDelegate.getDefaultNightMode()));
@@ -463,6 +566,7 @@ public class MainActivity extends AppCompatActivity {
 		}
 		ultrasonicEnabled = Math.abs(carrierFrequency) > 3000;
 		super.onCreate(state);
+
 		ActivityMainBinding binding = ActivityMainBinding.inflate(getLayoutInflater());
 		status = binding.status;
 		handler = new Handler(getMainLooper());
@@ -472,6 +576,7 @@ public class MainActivity extends AppCompatActivity {
 		stagedCall = new byte[10];
 		payload = new byte[170];
 		binding.messages.setAdapter(messages);
+
 		binding.messages.setOnItemClickListener((adapterView, view, i, l) -> {
 			String item = messages.getItem(i);
 			if (item != null) {
@@ -492,27 +597,334 @@ public class MainActivity extends AppCompatActivity {
 		initAudioTrack();
 
 		List<String> permissions = new ArrayList<>();
+
 		if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
 			permissions.add(Manifest.permission.RECORD_AUDIO);
 			setStatus(getString(R.string.audio_permission_denied));
 		} else {
 			initAudioRecord(false);
 		}
+
+		if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+			// Request permission to read external storage
+			permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE);
+
+		}
+
+		if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+			// Request permission to write to external storage
+			permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+		//	setStatus(getString(R.string.write_storage_permission_denied));
+		}
+
+
+
 		if (!permissions.isEmpty())
 			ActivityCompat.requestPermissions(this, permissions.toArray(new String[0]), permissionID);
+
 
 		String message = extractIntent(getIntent());
 		if (message != null)
 			composeMessage(message);
+
+
+
+
+
+
 	}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 	@Override
 	protected void onNewIntent(Intent intent) {
 		super.onNewIntent(intent);
-		String message = extractIntent(intent);
-		if (message != null)
-			composeMessage(message);
+		//cpvDisplayPicture.setVisibility(View.GONE);
+		loadImage(intent);
+
 	}
+
+
+
+	private void loadImage(Intent intent) {
+		Uri uri = getImageUriFromIntent(intent);
+		if (uri == null) {
+			uri = mSettings.getImageUri();
+		}
+		boolean succeeded = loadImage(uri);
+		if (!succeeded) {
+			resetState();
+		}
+	}
+
+	private Uri getImageUriFromIntent(Intent intent) {
+		//cpvDisplayPicture.setVisibility(View.GONE);
+		Uri uri = null;
+		if (isIntentTypeValid(intent.getType()) && isIntentActionValid(intent.getAction())) {
+			uri = intent.hasExtra(Intent.EXTRA_STREAM) ?
+					(Uri) intent.getParcelableExtra(Intent.EXTRA_STREAM) : intent.getData();
+		}
+		return uri;
+	}
+
+
+
+	private boolean loadImage(Uri uri) {
+		boolean succeeded = false;
+		ContentResolver resolver = getContentResolver();
+		if (uri != null) {
+			//cpvDisplayPicture.setVisibility(View.VISIBLE);
+			try {
+				InputStream stream = resolver.openInputStream(uri);
+				if (stream != null) {
+					cpvDisplayPicture.setVisibility(View.VISIBLE);
+					cpvDisplayPicture.setBitmap(stream);
+					succeeded = true;
+					showMessage("Image importation success");
+				}
+			} catch (Exception ex) {
+				if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && isPermissionException(ex)
+						&& needsRequestReadPermission()) {
+					requestReadPermission();
+				}
+			}
+		} else {
+		//	cpvDisplayPicture.setVisibility(View.GONE);
+		}
+		if (succeeded) {
+			cpvDisplayPicture.rotateImage(getOrientation(resolver, uri));
+			mSettings.setImageUri(uri);
+		}
+		return succeeded;
+	}
+
+
+	private void resetState() {
+		try {
+			cpvDisplayPicture.setBitmap(null);
+			mSettings.setImageUri(null);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		//cpvDisplayPicture.setVisibility(View.GONE);
+		mSettings.setImageUri(null);
+	}
+
+	private void setDefaultBitmap() {
+		try {
+			cpvDisplayPicture = findViewById(R.id.cpvDisplayPicture);
+			cpvDisplayPicture.setBitmap(getResources().openRawResource(R.raw.color_bars));
+		} catch (Exception ignore) {
+			cpvDisplayPicture.setNoBitmap();
+		}
+		mSettings.setImageUri(null);
+	}
+
+	private boolean isIntentActionValid(String action) {
+		return Intent.ACTION_SEND.equals(action);
+	}
+
+	private boolean isIntentTypeValid(String type) {
+		return type != null && type.startsWith("image/");
+	}
+
+	private boolean isPermissionException(Exception ex) {
+		return ex.getCause() instanceof ErrnoException
+				&& ((ErrnoException) ex.getCause()).errno == OsConstants.EACCES;
+	}
+
+	private boolean needsRequestReadPermission() {
+		if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M)
+			return false;
+		String permission = Manifest.permission.READ_EXTERNAL_STORAGE;
+		int state = ContextCompat.checkSelfPermission(this, permission);
+		return state != PackageManager.PERMISSION_GRANTED;
+	}
+
+	private void requestReadPermission() {
+		String[] permissions = new String[]{Manifest.permission.READ_EXTERNAL_STORAGE};
+		ActivityCompat.requestPermissions(this, permissions, MainActivity.REQUEST_LOAD_IMAGE_PERMISSION);
+	}
+
+	public int getOrientation(ContentResolver resolver, Uri uri) {
+		int orientation = 0;
+		try {
+			Cursor cursor = resolver.query(uri,
+					new String[]{MediaStore.Images.ImageColumns.ORIENTATION},
+					null, null, null);
+			assert cursor != null;
+			if (cursor.moveToFirst())
+				orientation = cursor.getInt(0);
+			cursor.close();
+		} catch (Exception ignore) {
+			orientation = getExifOrientation(resolver, uri);
+		}
+		return orientation;
+	}
+
+	private int getExifOrientation(ContentResolver resolver, Uri uri) {
+		int orientation = 0;
+		try (InputStream in = resolver.openInputStream(uri)) {
+			assert in != null;
+			int orientationAttribute = 0;
+			if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+				orientationAttribute = (new ExifInterface(in)).getAttributeInt(ExifInterface.TAG_ORIENTATION, 0);
+			}
+			orientation = Utility.convertToDegrees(orientationAttribute);
+		} catch (Exception ignored) {
+		}
+		return orientation;
+	}
+
+	private void setMode(String modeClassName) {
+		if (mEncoder.setMode(modeClassName)) {
+			IModeInfo modeInfo = mEncoder.getModeInfo();
+			if (cpvDisplayPicture != null) {
+				cpvDisplayPicture.setModeSize(modeInfo.getModeSize());
+			} else {
+				// Handle the case when cpvDisplayPicture is not initialized
+			}
+			mSettings.setModeClassName(modeClassName);
+		}
+	}
+
+
+	@Override
+	public void onActivityResult(int requestCode, int resultCode, Intent data) {
+		switch (requestCode) {
+			case REQUEST_IMAGE_CAPTURE:
+				if (resultCode == RESULT_OK) {
+					Uri uri = mSettings.getImageUri();
+					if (loadImage(uri))
+						addImageToGallery(uri);
+				}
+				break;
+			case REQUEST_PICK_IMAGE:
+				if (resultCode == RESULT_OK && data != null)
+					loadImage(data.getData());
+				break;
+			default:
+				super.onActivityResult(requestCode, resultCode, data);
+				break;
+		}
+	}
+
+	private void addImageToGallery(Uri uri) {
+		Intent intent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+		intent.setData(uri);
+		sendBroadcast(intent);
+
+	}
+
+	private void showMessage(String message) {
+		Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+	}
+
+
+
+	private void startEncoding() {
+
+		Bitmap imageBitmap = cpvDisplayPicture.getBitmap();
+		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+		imageBitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream);
+		byte[] imageByteArray = outputStream.toByteArray();
+
+		mEncoder.setOnEncodeCompleteListener(() -> showMessage("Encoding image now"));
+		mEncoder.play(cpvDisplayPicture.getBitmap());
+
+	}
+
+	private void stopEncoding() {
+	//	Button btnStartEncoding = findViewById(R.id.btnStartEncoding);
+	//	btnStartEncoding.setVisibility(View.VISIBLE);
+	//	btnDeletePicture.setVisibility(View.VISIBLE);
+	//	AFSKEncoder.stopAudio();
+		mEncoder.stop();
+//		mHandler.removeCallbacksAndMessages(null);
+//		mHandler.removeCallbacks(textEncodingRunnable);
+//		mHandler.removeCallbacks(imageEncodingRunnable);
+	}
+
+
+	private void saveWave() {
+		if (Utility.isExternalStorageWritable()) {
+			WaveFileOutputContext context = new WaveFileOutputContext(getContentResolver(), Utility.createWaveFileName());
+			mEncoder.save(cpvDisplayPicture.getBitmap(), context);
+		}
+	}
+
+	public void completeSaving(WaveFileOutputContext context) {
+		context.update();
+	}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 	private String extractIntent(Intent intent) {
 		String action = intent.getAction();
@@ -719,12 +1131,46 @@ public class MainActivity extends AppCompatActivity {
 		return true;
 	}
 
+
+
+
+
+	private void dispatchPickPictureIntent() {
+		Intent intent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+		tryToStartActivityForResult(intent, REQUEST_PICK_IMAGE);
+	}
+
+	private void tryToStartActivityForResult(Intent intent, int requestCode) {
+		if (intent.resolveActivity(getPackageManager()) == null) {
+			Toast.makeText(this, "Another activity could not be resolved", Toast.LENGTH_SHORT).show();
+			return;
+		}
+		try {
+			startActivityForResult(intent, requestCode);
+		} catch (Exception ignore) {
+			Toast.makeText(this, "Another activity could not be resolved", Toast.LENGTH_SHORT).show();
+		}
+	}
+
 	@Override
 	public boolean onOptionsItemSelected(MenuItem item) {
 		int id = item.getItemId();
 		if (id == R.id.action_ping) {
-			transmitMessage("");
-			return true;
+			//showMessage("Retrieving location");
+		//	startLocationUpdates() ;
+
+		//	return true;
+		}
+		if (id == R.id.btnPickPicture){
+			dispatchPickPictureIntent();
+
+		}
+		if (id == R.id.btnTakePicture){
+		//	takePicture();
+		}
+		if (id == R.id.btnStartEncoding){
+			startEncoding();
+			mEncoder.play(cpvDisplayPicture.getBitmap());
 		}
 		if (id == R.id.action_delete_messages) {
 			if (messages.getCount() > 0)
@@ -1046,6 +1492,7 @@ public class MainActivity extends AppCompatActivity {
 			produceEncoder(outputBuffer, outputChannel);
 			audioTrack.write(outputBuffer, 0, outputBuffer.length);
 		}
+		showMessage(pingLocation);
 		audioTrack.play();
 		setStatus(getString(R.string.transmitting));
 	}

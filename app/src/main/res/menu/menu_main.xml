@@ -15,6 +15,34 @@
 		android:title="@string/compose"
 		app:iconTint="@color/tint"
 		app:showAsAction="always" />
+
+	<item
+		android:id="@+id/btnPickPicture"
+		android:layout_width="126dp"
+		android:layout_height="30dp"
+		android:background="@android:color/transparent"
+		android:drawableBottom="@android:drawable/ic_menu_gallery"
+		android:textColor="@android:color/black"
+		android:title="Import Picture" />
+
+	<item
+		android:id="@+id/btnTakePicture"
+		android:layout_width="125dp"
+		android:layout_height="30dp"
+		android:background="@android:color/transparent"
+		android:drawableBottom="@android:drawable/ic_menu_camera"
+		android:textColor="@android:color/white"
+		android:title="Capture" />
+
+	<item
+		android:id="@+id/btnStartEncoding"
+		android:layout_width="125dp"
+		android:layout_height="52dp"
+		android:drawableBottom="@android:drawable/ic_media_play"
+		android:textColor="@android:color/white"
+		android:title="Encode" />
+
+
 	<item android:title="@string/encoder_settings">
 		<menu>
 			<item android:title="@string/sample_rate">
