@@ -431,10 +431,10 @@ public class MainActivity extends AppCompatActivity {
 					showMessage("Load Image Permission Accepted");
 					loadImage(mSettings.getImageUri());
 				}
-				if (permissions[i].equals(Manifest.permission.CAMERA) && grantResults[i] == PackageManager.PERMISSION_GRANTED) {
-					// Handle CAMERA (Image Capture) permission granted
-				//	dispatchTakePictureIntent();
-				}
+//				if (permissions[i].equals(Manifest.permission.CAMERA) && grantResults[i] == PackageManager.PERMISSION_GRANTED) {
+//					// Handle CAMERA (Image Capture) permission granted
+//				//	dispatchTakePictureIntent();
+//				}
 				// Add more conditions for other permissions as needed
 			}
 		} else {
@@ -512,15 +512,18 @@ public class MainActivity extends AppCompatActivity {
 		cpvDisplayPicture = findViewById(R.id.cpvDisplayPicture);
 
 		locationHelper = new LocationHelper(this, statusTextView);
-		//cpvDisplayPicture.setVisibility(View.);
+		//cpvDisplayPicture.setVisibility(View.VISIBLE);
 
+		if (cpvDisplayPicture != null) {
+			cpvDisplayPicture.setVisibility(View.VISIBLE);
+		}
 
 
 		MainActivityMessenger messenger = new MainActivityMessenger(this);
 		mEncoder = new Encoder(messenger);
 		mSettings = new Settings(this);
 		mSettings.load();
-//		loadImage(getIntent());
+	//	loadImage(getIntent());
 		setMode(mSettings.getModeClassName());
 
 
@@ -570,7 +573,7 @@ public class MainActivity extends AppCompatActivity {
 		ActivityMainBinding binding = ActivityMainBinding.inflate(getLayoutInflater());
 		status = binding.status;
 		handler = new Handler(getMainLooper());
-		setContentView(binding.getRoot());
+//		setContentView(binding.getRoot());
 		stagedCFO = new float[1];
 		stagedMode = new int[1];
 		stagedCall = new byte[10];
@@ -598,12 +601,12 @@ public class MainActivity extends AppCompatActivity {
 
 		List<String> permissions = new ArrayList<>();
 
-		if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-			permissions.add(Manifest.permission.RECORD_AUDIO);
-			setStatus(getString(R.string.audio_permission_denied));
-		} else {
-			initAudioRecord(false);
-		}
+//		if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+//			permissions.add(Manifest.permission.RECORD_AUDIO);
+//			setStatus(getString(R.string.audio_permission_denied));
+//		} else {
+//			initAudioRecord(false);
+//		}
 
 		if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
 			// Request permission to read external storage
@@ -674,7 +677,7 @@ public class MainActivity extends AppCompatActivity {
 	@Override
 	protected void onNewIntent(Intent intent) {
 		super.onNewIntent(intent);
-		//cpvDisplayPicture.setVisibility(View.GONE);
+		cpvDisplayPicture.setVisibility(View.GONE);
 		loadImage(intent);
 
 	}
@@ -708,27 +711,35 @@ public class MainActivity extends AppCompatActivity {
 		boolean succeeded = false;
 		ContentResolver resolver = getContentResolver();
 		if (uri != null) {
-			//cpvDisplayPicture.setVisibility(View.VISIBLE);
-			try {
-				InputStream stream = resolver.openInputStream(uri);
-				if (stream != null) {
-					cpvDisplayPicture.setVisibility(View.VISIBLE);
-					cpvDisplayPicture.setBitmap(stream);
-					succeeded = true;
-					showMessage("Image importation success");
+			//	cpvDisplayPicture.setVisibility(View.VISIBLE);
+				try {
+					InputStream stream = resolver.openInputStream(uri);
+					if (stream == null) {
+						cpvDisplayPicture.setVisibility(View.VISIBLE);
+						cpvDisplayPicture.setBitmap(stream);
+						succeeded = true;
+
+						runOnUiThread(() -> {
+							showMessage("Image loaded");
+						});
+					}
+				} catch (Exception ex) {
+					if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && isPermissionException(ex)
+							&& needsRequestReadPermission()) {
+						requestReadPermission();
+						showMessage("Error loading image");
+					}
 				}
-			} catch (Exception ex) {
-				if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && isPermissionException(ex)
-						&& needsRequestReadPermission()) {
-					requestReadPermission();
-				}
-			}
+
 		} else {
 		//	cpvDisplayPicture.setVisibility(View.GONE);
 		}
 		if (succeeded) {
-			cpvDisplayPicture.rotateImage(getOrientation(resolver, uri));
-			mSettings.setImageUri(uri);
+			if (cpvDisplayPicture.getVisibility() == View.VISIBLE) {
+				cpvDisplayPicture.rotateImage(getOrientation(resolver, uri));
+				mSettings.setImageUri(uri);
+
+			}
 		}
 		return succeeded;
 	}
@@ -741,7 +752,7 @@ public class MainActivity extends AppCompatActivity {
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
-		//cpvDisplayPicture.setVisibility(View.GONE);
+		cpvDisplayPicture.setVisibility(View.GONE);
 		mSettings.setImageUri(null);
 	}
 
